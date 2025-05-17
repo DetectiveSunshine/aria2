@@ -99,7 +99,7 @@ RUN tar xf c-ares-1.34.5.tar.gz && \
         LIBS="-lws2_32" && \
     make -j$(nproc) install
 
-RUN tar xf libssh2-1.11.1.tar.bz2 && \
+RUN tar xf libssh2-1.11.1.tar.xz && \
     cd libssh2-1.11.1 && \
     ./configure \
         --disable-shared \
