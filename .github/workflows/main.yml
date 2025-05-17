@@ -1,0 +1,42 @@
+name: Aria2 Windows Cross-Compile
+
+on:
+  workflow_dispatch: # Allows manual trigger of the workflow
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Aria2 source
+      uses: actions/checkout@v4
+
+    - name: Build Aria2 for Windows (64-bit, Optimized Release with LTO)
+      run: |
+        # Build the Docker image containing the cross-compilation environment
+        docker build -t aria2-cross-builder -f Dockerfile.mingw .
+
+        # Create output directory on the host machine
+        mkdir -p ./build_output/x86_64
+
+        echo "Building 64-bit (x86_64) binary with -O3 optimization, Full LTO, full static linking, and no debug info..."
+        docker run --rm \
+          -v "$(pwd)":/aria2_source \
+          aria2-cross-builder \
+          /bin/bash -c "cd /aria2_source && \
+          HOST=x86_64-w64-mingw32 \
+          ARIA2_STATIC=yes \
+          CFLAGS='-O3 -flto' \
+          CXXFLAGS='-O3 -flto' \
+          LDFLAGS='-s -Wl,--strip-all -flto' \
+          ./mingw-config --disable-debug && \
+          make clean && \
+          make -j$(nproc) && \
+          strip src/aria2c.exe && \
+          cp src/aria2c.exe /aria2_source/build_output/x86_64/"
+
+    - name: Upload 64-bit Windows binary (Release with LTO)
+      uses: actions/upload-artifact@v4
+      with:
+        name: aria2c-windows-x86_64-release-lto
+        path: ./build_output/x86_64/aria2c.exe
