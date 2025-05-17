@@ -21,8 +21,11 @@ jobs:
             ca-certificates curl gpg dirmngr \
             software-properties-common wget
 
-      # Removed steps to add Collabora repository and key.
-      # Relying on the standard distribution's mingw-w64 package.
+      - name: Add Collabora MinGW repository and key
+        run: |
+          wget -O /etc/apt/trusted.gpg.d/collabora-obs-mingw.asc https://collabora-obs.dl.collabora.com/repositories/Collabora:/OBS:/mingw:/experimental/Debian_12/Release.key
+          sudo apt-add-repository 'deb https://collabora-obs.dl.collabora.com/repositories/Collabora:/OBS:/mingw:/experimental/Debian_12/ ./'
+          sudo apt-get update -y
 
       - name: Install MinGW and build dependencies
         run: |
@@ -33,8 +36,7 @@ jobs:
             zlib1g-dev libgnutls28-dev libgmp-dev \
             libssh2-1-dev libc-ares-dev libxml2-dev \
             libsqlite3-dev libssl-dev libcppunit-dev \
-            gettext \
-            x86_64-w64-mingw32-gmp-dev # Added MinGW-specific GMP dev package
+            gettext
 
       - name: Define Aria2 version
         run: echo "ARIA2_VERSION=1.37.0" >> $GITHUB_ENV
@@ -49,10 +51,7 @@ jobs:
         run: |
           export MINGW_PACKAGE_PREFIX=x86_64-w64-mingw32
           export ARIA2_STATIC=yes
-          export CC=x86_64-w64-mingw32-gcc # Set CC for cross-compilation
-          export CC_FOR_BUILD=x86_64-linux-gnu-gcc # Set CC_FOR_BUILD for build tools
           ./configure \
-            --build=x86_64-linux-gnu \
             --host=${MINGW_PACKAGE_PREFIX} \
             --prefix=/${MINGW_PACKAGE_PREFIX} \
             --with-libgnutls \
@@ -64,14 +63,13 @@ jobs:
             --with-libssl \
             --enable-static=${ARIA2_STATIC} \
             --enable-shared=$(if [ "$ARIA2_STATIC" = "yes" ]; then echo no; else echo yes; fi) \
-            --enable-cxx \
             CPPFLAGS="-I/${MINGW_PACKAGE_PREFIX}/include -I/usr/include -O3 -flto -DNDEBUG" \
             LDFLAGS="-L/${MINGW_PACKAGE_PREFIX}/lib -L/usr/lib/${MINGW_PACKAGE_PREFIX} -L/usr/lib -static-libgcc -static-libstdc++ -flto" \
             PKG_CONFIG_PATH="/${MINGW_PACKAGE_PREFIX}/lib/pkgconfig:/usr/lib/${MINGW_PACKAGE_PREFIX}/pkgconfig:/usr/lib/pkgconfig"
 
       - name: Build Aria2
         working-directory: aria2-${{ env.ARIA2_VERSION }}
-        run: make -j$(nproc) # Keeping -j$(nproc) for faster build
+        run: make -j$(nproc)
 
       - name: Create package directory
         run: mkdir -p ./aria2_mingw_package
