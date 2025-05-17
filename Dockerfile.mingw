@@ -14,7 +14,12 @@ FROM ubuntu:22.04
 MAINTAINER Tatsuhiro Tsujikawa
 
 # Change HOST to x86_64-w64-mingw32 to build 64-bit binary
-ARG HOST=i686-w64-mingw32
+ARG HOST=x86_64-w64-mingw32
+
+ENV CFLAGS="-O3 -flto -mtune=generic -g0"
+ENV CXXFLAGS="-O3 -flto -mtune=generic -g0"
+ENV LDFLAGS="-flto"
+
 
 # It would be better to use nearest ubuntu archive mirror for faster
 # downloads.
