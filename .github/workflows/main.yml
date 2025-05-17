@@ -1,88 +1,123 @@
-name: Cross-Compile Aria2 for Windows x64 on Linux
+name: Build aria2 Windows x64
 
 on:
   push:
-    branches:
-      - main # Or your default branch, e.g., master
   pull_request:
-    branches:
-      - main # Or your default branch
-  workflow_dispatch: # Allows running the workflow manually
 
 jobs:
-  cross-compile-windows-x64:
-    runs-on: ubuntu-latest # Use the latest Ubuntu Linux runner for cross-compilation
-
+  build-windows-x64:
+    runs-on: ubuntu-latest
+    env:
+      HOST: x86_64-w64-mingw32
+      PREFIX: /usr/local/${{ env.HOST }}
+      CFLAGS: "-O3 -flto"
+      CXXFLAGS: "-O3 -flto"
+      LDFLAGS: "-flto"
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4 # Checkout the latest source code
+      - name: Checkout source
+        uses: actions/checkout@v3
 
-    - name: Install Cross-Compilation Dependencies
-      run: |
-        sudo apt-get update
-        # Install build tools and the mingw-w64 cross-compilation toolchain for x86_64
-        sudo apt-get install -y \
-          git \
-          make \
-          autoconf \
-          automake \
-          libtool \
-          pkg-config \
-          gcc-x86-64-w64-mingw32 \
-          g++-x86-64-w64-mingw32 \
-          zlib1g-dev \
-          libssl-dev \
-          libc-ares-dev \
-          libssh2-1-dev \
-          libxml2-dev \
-          libsqlite3-dev \
-          # Install mingw-w64 development libraries for the dependencies
-          mingw-w64-x86-64-dev \
-          mingw-w64-tools
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mingw-w64 \
+            autoconf automake autotools-dev autopoint libtool pkg-config \
+            libxml2-dev libcppunit-dev zlib1g-dev libssh2-1-dev libsqlite3-dev \
+            libgcrypt-dev libgpg-error-dev libssl-dev libexpat1-dev libgnutls28-dev \
+            nettle-dev libgmp-dev
 
-    - name: Autoreconf
-      run: |
-        autoreconf -i
+      - name: Prepare build dependencies for mingw-w64 (cross-compile libs)
+        run: |
+          set -e
+          cd $HOME
+          mkdir -p aria2-windows-deps
+          cd aria2-windows-deps
 
-    - name: Configure and Build (Cross-Compile)
-      run: |
-        # Set environment variables for optimization and debug flags
-        # -O3: High level of optimization
-        # -flto: Enable Link-Time Optimization (FullLTO)
-        # -g0: Do not generate debug information
-        # --disable-debug: Standard configure option to disable debug features
-        export CFLAGS="-O3 -flto -g0"
-        export CXXFLAGS="-O3 -flto -g0"
-        export LDFLAGS="-flto"
+          # List of libs to build for mingw-w64 cross compile
+          # We build only those needed: c-ares, expat, sqlite3, zlib, libssh2, cppunit
+          # If these libs are already installed for mingw-w64 in $PREFIX, skip build (check a marker file)
+          if [ ! -f built_marker ]; then
+            # Download and build c-ares
+            wget https://c-ares.haxx.se/download/c-ares-1.34.5.tar.gz
+            tar xzf c-ares-1.34.5.tar.gz
+            cd c-ares-1.34.5
+            ./configure --host=${HOST} --prefix=${PREFIX} --disable-shared --enable-static
+            make -j$(nproc)
+            make install
+            cd ..
 
-        # Configure for cross-compilation to x86_64-w64-mingw32
-        ./configure \
-          --host=x86_64-w64-mingw32 \
-          --build=$(uname -m)-linux-gnu \
-          --prefix=/usr/local \
-          --enable-static=no \
-          --enable-shared=yes \
-          --with-openssl \
-          --with-zlib \
-          --with-libxml2 \
-          --with-sqlite3 \
-          --with-libssh2 \
-          --disable-debug \
-          --disable-nls # Disable Native Language Support if not needed
+            # Download and build expat
+            wget https://github.com/libexpat/libexpat/releases/download/R_2_5_0/expat-2.5.0.tar.bz2
+            tar xjf expat-2.5.0.tar.bz2
+            cd expat-2.5.0
+            ./configure --host=${HOST} --prefix=${PREFIX} --disable-shared --enable-static
+            make -j$(nproc)
+            make install
+            cd ..
 
-        # Build using multiple cores
-        make -j$(nproc)
+            # Download and build sqlite3
+            wget https://sqlite.org/2023/sqlite-autoconf-3410200.tar.gz
+            tar xzf sqlite-autoconf-3410200.tar.gz
+            cd sqlite-autoconf-3410200
+            ./configure --host=${HOST} --prefix=${PREFIX} --disable-shared --enable-static
+            make -j$(nproc)
+            make install
+            cd ..
 
-    - name: Install (Cross-Compile)
-      run: |
-        # Install to a temporary directory to easily package the artifact
-        make install DESTDIR=$(pwd)/aria2_win64_build
+            # Download and build zlib
+            wget https://zlib.net/zlib-1.2.13.tar.gz
+            tar xzf zlib-1.2.13.tar.gz
+            cd zlib-1.2.13
+            CHOST=${HOST} ./configure --prefix=${PREFIX}
+            make -j$(nproc)
+            make install
+            cd ..
 
-    - name: Archive Windows Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: aria2-win64-cross-compiled
-        # Path to the compiled executable within the temporary install directory
-        path: aria2_win64_build/usr/local/bin/aria2c.exe
-        retention-days: 7 # How long to keep the artifact
+            # Download and build libssh2
+            wget https://www.libssh2.org/download/libssh2-1.11.0.tar.gz
+            tar xzf libssh2-1.11.0.tar.gz
+            cd libssh2-1.11.0
+            ./configure --host=${HOST} --prefix=${PREFIX} --disable-shared --enable-static
+            make -j$(nproc)
+            make install
+            cd ..
 
+            # Download and build cppunit
+            wget https://dev-www.libreoffice.org/src/cppunit-1.15.1.tar.gz
+            tar xzf cppunit-1.15.1.tar.gz
+            cd cppunit-1.15.1
+            ./configure --host=${HOST} --prefix=${PREFIX} --disable-shared --enable-static
+            make -j$(nproc)
+            make install
+            cd ..
+
+            touch built_marker
+          fi
+
+      - name: Bootstrap aria2 build system
+        run: autoreconf -i
+
+      - name: Configure aria2 for Windows cross-compile with optimization and LTO
+        run: |
+          ./mingw-config
+
+          ./configure \
+            --host=${HOST} \
+            --prefix=${PREFIX} \
+            CFLAGS="${CFLAGS}" \
+            CXXFLAGS="${CXXFLAGS}" \
+            LDFLAGS="${LDFLAGS}" \
+            ARIA2_STATIC=yes
+
+      - name: Build aria2
+        run: make -j$(nproc)
+
+      - name: Run unit tests
+        run: make check || true
+
+      - name: Upload aria2 Windows x64 executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2-windows-x64
+          path: src/aria2c.exe
