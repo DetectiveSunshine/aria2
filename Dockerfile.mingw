@@ -113,7 +113,6 @@ RUN tar xf libssh2-1.11.1.tar.xz && \
 ARG ARIA2_VERSION=master
 ARG ARIA2_REF=refs/heads/master
 
-ADD https://api.github.com/repos/DetectiveSunshine/aria2/git/refs/heads/master version.json
-RUN git clone -b $ARIA2_VERSION --depth 1 https://api.github.com/repos/DetectiveSunshine/aria2 && \
+RUN git clone --depth 1 https://github.com/DetectiveSunshine/aria2 && \
     cd aria2 && autoreconf -i && ./mingw-config && make -j$(nproc) && \
     $HOST-strip src/aria2c.exe
