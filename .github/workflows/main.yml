@@ -1,88 +1,88 @@
-name: Build Aria2 with MinGW (O3 and LTO)
+name: Cross-Compile Aria2 for Windows x64 on Linux
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main # Or your default branch, e.g., master
+  pull_request:
+    branches:
+      - main # Or your default branch
+  workflow_dispatch: # Allows running the workflow manually
 
 jobs:
-  build_mingw:
-    runs-on: ubuntu-latest
+  cross-compile-windows-x64:
+    runs-on: ubuntu-latest # Use the latest Ubuntu Linux runner for cross-compilation
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4 # Checkout the latest source code
 
-      - name: Update package list
-        run: sudo apt-get update -y
+    - name: Install Cross-Compilation Dependencies
+      run: |
+        sudo apt-get update
+        # Install build tools and the mingw-w64 cross-compilation toolchain for x86_64
+        sudo apt-get install -y \
+          git \
+          make \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          gcc-x86-64-w64-mingw32 \
+          g++-x86-64-w64-mingw32 \
+          zlib1g-dev \
+          libssl-dev \
+          libc-ares-dev \
+          libssh2-1-dev \
+          libxml2-dev \
+          libsqlite3-dev \
+          # Install mingw-w64 development libraries for the dependencies
+          mingw-w64-x86-64-dev \
+          mingw-w64-tools
 
-      - name: Install essential tools and MinGW prerequisites
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            ca-certificates curl gpg dirmngr \
-            software-properties-common wget
+    - name: Autoreconf
+      run: |
+        autoreconf -i
 
-      - name: Add Collabora MinGW repository and key
-        run: |
-          wget -O /etc/apt/trusted.gpg.d/collabora-obs-mingw.asc https://collabora-obs.dl.collabora.com/repositories/Collabora:/OBS:/mingw:/experimental/Debian_12/Release.key
-          sudo apt-add-repository 'deb https://collabora-obs.dl.collabora.com/repositories/Collabora:/OBS:/mingw:/experimental/Debian_12/ ./'
-          sudo apt-get update -y
+    - name: Configure and Build (Cross-Compile)
+      run: |
+        # Set environment variables for optimization and debug flags
+        # -O3: High level of optimization
+        # -flto: Enable Link-Time Optimization (FullLTO)
+        # -g0: Do not generate debug information
+        # --disable-debug: Standard configure option to disable debug features
+        export CFLAGS="-O3 -flto -g0"
+        export CXXFLAGS="-O3 -flto -g0"
+        export LDFLAGS="-flto"
 
-      - name: Install MinGW and build dependencies
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            mingw-w64 \
-            autoconf automake autopoint \
-            build-essential libtool pkg-config \
-            zlib1g-dev libgnutls28-dev libgmp-dev \
-            libssh2-1-dev libc-ares-dev libxml2-dev \
-            libsqlite3-dev libssl-dev libcppunit-dev \
-            gettext
+        # Configure for cross-compilation to x86_64-w64-mingw32
+        ./configure \
+          --host=x86_64-w64-mingw32 \
+          --build=$(uname -m)-linux-gnu \
+          --prefix=/usr/local \
+          --enable-static=no \
+          --enable-shared=yes \
+          --with-openssl \
+          --with-zlib \
+          --with-libxml2 \
+          --with-sqlite3 \
+          --with-libssh2 \
+          --disable-debug \
+          --disable-nls # Disable Native Language Support if not needed
 
-      - name: Define Aria2 version
-        run: echo "ARIA2_VERSION=1.37.0" >> $GITHUB_ENV
+        # Build using multiple cores
+        make -j$(nproc)
 
-      - name: Download Aria2 source
-        run: |
-          curl -L -o aria2-${{ env.ARIA2_VERSION }}.tar.xz https://github.com/aria2/aria2/releases/download/release-${{ env.ARIA2_VERSION }}/aria2-${{ env.ARIA2_VERSION }}.tar.xz
-          tar xf aria2-${{ env.ARIA2_VERSION }}.tar.xz
+    - name: Install (Cross-Compile)
+      run: |
+        # Install to a temporary directory to easily package the artifact
+        make install DESTDIR=$(pwd)/aria2_win64_build
 
-      - name: Configure Aria2 for MinGW with O3 and LTO
-        working-directory: aria2-${{ env.ARIA2_VERSION }}
-        run: |
-          export MINGW_PACKAGE_PREFIX=x86_64-w64-mingw32
-          export ARIA2_STATIC=yes
-          ./configure \
-            --host=${MINGW_PACKAGE_PREFIX} \
-            --prefix=/${MINGW_PACKAGE_PREFIX} \
-            --with-libgnutls \
-            --with-libgmp \
-            --with-libssh2 \
-            --with-libcares \
-            --with-libxml2 \
-            --with-sqlite3 \
-            --with-libssl \
-            --enable-static=${ARIA2_STATIC} \
-            --enable-shared=$(if [ "$ARIA2_STATIC" = "yes" ]; then echo no; else echo yes; fi) \
-            CPPFLAGS="-I/${MINGW_PACKAGE_PREFIX}/include -I/usr/include -O3 -flto -DNDEBUG" \
-            LDFLAGS="-L/${MINGW_PACKAGE_PREFIX}/lib -L/usr/lib/${MINGW_PACKAGE_PREFIX} -L/usr/lib -static-libgcc -static-libstdc++ -flto" \
-            PKG_CONFIG_PATH="/${MINGW_PACKAGE_PREFIX}/lib/pkgconfig:/usr/lib/${MINGW_PACKAGE_PREFIX}/pkgconfig:/usr/lib/pkgconfig"
+    - name: Archive Windows Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: aria2-win64-cross-compiled
+        # Path to the compiled executable within the temporary install directory
+        path: aria2_win64_build/usr/local/bin/aria2c.exe
+        retention-days: 7 # How long to keep the artifact
 
-      - name: Build Aria2
-        working-directory: aria2-${{ env.ARIA2_VERSION }}
-        run: make -j$(nproc)
-
-      - name: Create package directory
-        run: mkdir -p ./aria2_mingw_package
-
-      - name: Install Aria2 to package directory
-        working-directory: aria2-${{ env.ARIA2_VERSION }}
-        run: make install DESTDIR=$(pwd)/../aria2_mingw_package
-
-      - name: List packaged files
-        run: ls -R ./aria2_mingw_package
-
-      - name: Upload Aria2 MinGW build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: aria2-mingw-${{ env.ARIA2_VERSION }}-O3-lto
-          path: ./aria2_mingw_package/
