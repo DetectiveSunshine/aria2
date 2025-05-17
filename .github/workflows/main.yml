@@ -28,7 +28,7 @@ jobs:
         cp /aria2/src/aria2c.exe /out/
 
     - name: Upload aria2c.exe artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: aria2-windows-binary
         path: output/aria2c.exe
